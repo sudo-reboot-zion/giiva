@@ -241,10 +241,19 @@
         )
 
         ;; --- VALIDATIONS ---
+        
+        ;; *** VALIDATE CREATOR ADDRESS ***
+        (asserts! (not (is-eq creator (as-contract tx-sender))) err-invalid-wallet)
+        (asserts! (not (is-eq creator 'SP000000000000000000002Q6VF78)) err-invalid-wallet)
+        
         (asserts! (is-eq tx-sender creator) err-unauthorized)
         (asserts! (>= stacks-block-height deadline) err-campaign-not-ended)
         (asserts! (>= raised goal) err-goal-not-reached)
         (asserts! (is-eq status "active") err-already-claimed)
+        
+        ;; *** VALIDATE AMOUNTS ***
+        (asserts! (> creator-amount u0) err-insufficient-funds)
+        (asserts! (<= creator-amount u100000000000000) err-insufficient-funds)
 
         ;; Transfer STX to campaign creator
         (try! (as-contract (stx-transfer? creator-amount tx-sender creator)))
@@ -270,7 +279,8 @@
     (let 
         (
             (campaign (unwrap! (map-get? campaigns campaign-id) err-campaign-not-found))
-            (contribution-data (unwrap! (map-get? contributions {campaign-id: campaign-id, contributor: tx-sender}) err-no-contribution))
+            (contributor tx-sender)  ;; Capture contributor BEFORE as-contract
+            (contribution-data (unwrap! (map-get? contributions {campaign-id: campaign-id, contributor: contributor}) err-no-contribution))
             (refund-amount (get amount contribution-data))
             (raised (get raised-amount campaign))
             (goal (get goal-amount campaign))
@@ -290,11 +300,11 @@
         (asserts! (> refund-amount u0) err-no-contribution)
         (asserts! (<= refund-amount u100000000000000) err-insufficient-funds)
 
-        ;; Refund STX to contributor
-        (try! (as-contract (stx-transfer? refund-amount tx-sender tx-sender)))
+        ;; Refund STX to contributor 
+        (try! (as-contract (stx-transfer? refund-amount tx-sender contributor)))
 
         ;; Remove record to prevent double refunds
-        (map-delete contributions {campaign-id: campaign-id, contributor: tx-sender})
+        (map-delete contributions {campaign-id: campaign-id, contributor: contributor})
 
         ;; Mark campaign as failed (only once)
         (if (is-eq (get status campaign) "active")
